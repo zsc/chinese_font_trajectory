@@ -22,6 +22,8 @@ class BezierPathPen(BasePen):
     def _closePath(self):
         self.path.append(("Z",))
 
+import traceback
+
 def get_glyph_paths(font_path, text):
     font = TTFont(font_path, ignoreDecompileErrors=True)
     glyphSet = font.getGlyphSet()
@@ -35,6 +37,7 @@ def get_glyph_paths(font_path, text):
                 glyphSet[glyphName].draw(pen)
             except Exception as e:
                 print(f"Error drawing glyph for {char}: {e}")
+                traceback.print_exc()
             paths[char] = pen.path
     return paths
 
@@ -52,6 +55,7 @@ def get_trajectories():
         paths = get_glyph_paths(font_path, text)
         return jsonify(paths)
     except Exception as e:
+        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
