@@ -95,6 +95,54 @@ def numpyToPath(np_path):
             path.append(("Z",))
     return path
 
+def normalize_path(np_path):
+    """
+    Normalizes the coordinates in a numpy path array to the [0, 1] range.
+    Returns the normalized path, offset, and scale factor.
+    """
+    # We only care about coordinate columns (from index 4 onwards)
+    coords = np_path[:, 4:]
+
+    # Create a mask to ignore padding zeros
+    # A row is padding if the command is all zeros (which shouldn't happen, but good practice)
+    # or if the points are all zeros. A simpler way is to find non-zero elements.
+    non_zero_mask = coords != 0
+    if not np.any(non_zero_mask):
+        # This path has no coordinates, return as is
+        return np_path, np.array([0., 0.]), 1.0
+
+    # Get all valid (non-zero) coordinates
+    valid_coords = coords[non_zero_mask]
+
+    # We need to separate x and y. X coords are at even indices, Y at odd.
+    x_coords = coords[:, 0::2][non_zero_mask[:, 0::2]]
+    y_coords = coords[:, 1::2][non_zero_mask[:, 1::2]]
+
+    min_x, max_x = x_coords.min(), x_coords.max()
+    min_y, max_y = y_coords.min(), y_coords.max()
+
+    offset = np.array([min_x, min_y])
+    scale = max(max_x - min_x, max_y - min_y)
+
+    if scale == 0:
+        scale = 1.0  # Avoid division by zero for single-point paths
+
+    normalized_path = np_path.copy()
+    # Apply normalization to coordinate columns
+    for i in range(4, normalized_path.shape[1], 2):
+        # Only apply to non-zero values to avoid affecting padding
+        mask = normalized_path[:, i] != 0
+        normalized_path[mask, i] = (normalized_path[mask, i] - offset[0]) / scale
+        normalized_path[mask, i+1] = (normalized_path[mask, i+1] - offset[1]) / scale
+
+    return normalized_path, offset, scale
+
+def denormalize_path(normalized_path, offset, scale):
+    """Denormalizes a numpy path array using the given offset and scale."""
+    denormalized_path = normalized_path.copy()
+    denormalized_path[:, 4:] = denormalized_path[:, 4:] * scale + np.tile(offset, int(denormalized_path.shape[1] / 2) - 2)
+    return denormalized_path
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -111,13 +159,17 @@ def get_trajectories():
         for char, path in original_paths.items():
             # Convert path to numpy array
             np_path = pathToNumpy(path)
+
+            # Normalize the path and store parameters for denormalization
+            np_path_normalized, offset, scale = normalize_path(np_path)
             
             # Tokenize and detokenize
-            tokens = processor([np_path])
-            decoded_path = processor.decode(tokens)[0]
-            print(type(decoded_path))
-            print(decoded_path.shape)
-            print(decoded_path)
+            tokens = processor([np_path_normalized])
+            # The decoded path is also normalized
+            decoded_normalized_path = processor.decode(tokens)[0]
+
+            # Denormalize the path to get back original coordinates
+            decoded_path = denormalize_path(decoded_normalized_path, offset, scale)
             
             # Convert back to path
             reconstructed_paths[char] = numpyToPath(decoded_path)
