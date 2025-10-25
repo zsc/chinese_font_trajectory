@@ -187,9 +187,6 @@ def get_trajectories():
             # Normalize the path and store parameters for denormalization
             np_path_normalized, offset, scale = normalize_path(np_path)
             
-            # --- FIX ---
-            # Use the 'actions' keyword argument to prevent the processor from
-            # misinterpreting the input as text. This resolves the AttributeError.
             tokens = processor([np_path_normalized])
             
             # Since our batch size is 1, we take the first element [0].
