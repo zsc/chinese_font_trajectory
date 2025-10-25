@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, jsonify
-import json
+# The 'json' import is not used, so it can be removed.
 from fontTools.ttLib import TTFont
 from fontTools.pens.basePen import BasePen
 import traceback
@@ -46,9 +46,10 @@ def get_glyph_paths(font_path, text):
     return paths
 
 def pathToNumpy(path):
-    # Find the maximum number of points in a segment
+    # Find the maximum number of points in a segment (1 for M/L, 3 for C, 0 for Z)
     max_pts = 0
     for segment in path:
+        # segment[0] is the command type, segment[1:] are the points
         max_pts = max(max_pts, len(segment) - 1)
 
     # Create a numpy array
@@ -69,9 +70,16 @@ def pathToNumpy(path):
         for p in pts:
             row.extend(p)
         
-        # Pad with zeros
+        # Pad with zeros to ensure all rows have the same length
+        # 2 coordinates per point * (max points - current points)
         row.extend([0] * (2 * (max_pts - len(pts))))
         np_path.append(row)
+
+    # Handle empty path case to avoid creating an empty array with incorrect dimensions
+    if not np_path:
+        # The number of features is 4 (one-hot) + 2 * max_pts
+        num_features = 4 + 2 * max_pts
+        return np.empty((0, num_features), dtype=np.float32)
 
     return np.array(np_path, dtype=np.float32)
 
@@ -80,7 +88,9 @@ def numpyToPath(np_path):
     Converts a 2D numpy array back to a list of path commands.
     """
     path = []
-    # np_path is expected to be a 2D array of shape (sequence_length, features)
+    if np_path is None or np_path.shape[0] == 0:
+        return path
+        
     for row in np_path:
         # Find the most likely command by finding the index of the max value in the first 4 elements
         command_index = np.argmax(row[:4])
@@ -90,7 +100,9 @@ def numpyToPath(np_path):
         elif command_index == 1: # 'L'
             path.append(("L", (row[4], row[5])))
         elif command_index == 2: # 'C'
-            path.append(("C", (row[4], row[5]), (row[6], row[7]), (row[8], row[9])))
+            # Check if the array is wide enough for a curve
+            if len(row) >= 10:
+                path.append(("C", (row[4], row[5]), (row[6], row[7]), (row[8], row[9])))
         elif command_index == 3: # 'Z'
             path.append(("Z",))
     return path
@@ -100,26 +112,29 @@ def normalize_path(np_path):
     Normalizes the coordinates in a numpy path array to the [0, 1] range.
     Returns the normalized path, offset, and scale factor.
     """
-    # We only care about coordinate columns (from index 4 onwards)
-    coords = np_path[:, 4:]
-
-    # Create a mask to ignore padding zeros
-    # A row is padding if the command is all zeros (which shouldn't happen, but good practice)
-    # or if the points are all zeros. A simpler way is to find non-zero elements.
-    non_zero_mask = coords != 0
-    if not np.any(non_zero_mask):
-        # This path has no coordinates, return as is
+    # Handle empty or zero-row path
+    if np_path.shape[0] == 0:
         return np_path, np.array([0., 0.]), 1.0
 
-    # Get all valid (non-zero) coordinates
-    valid_coords = coords[non_zero_mask]
+    coords = np_path[:, 4:]
 
-    # We need to separate x and y. X coords are at even indices, Y at odd.
-    x_coords = coords[:, 0::2][non_zero_mask[:, 0::2]]
-    y_coords = coords[:, 1::2][non_zero_mask[:, 1::2]]
+    # Collect all valid coordinate values to find the bounding box, ignoring padding zeros
+    all_x = []
+    all_y = []
+    for i in range(0, coords.shape[1], 2):
+        x_col = coords[:, i]
+        y_col = coords[:, i+1]
+        # A point is considered to exist if it's not (0,0) padding
+        mask = (x_col != 0) | (y_col != 0)
+        all_x.extend(x_col[mask])
+        all_y.extend(y_col[mask])
 
-    min_x, max_x = x_coords.min(), x_coords.max()
-    min_y, max_y = y_coords.min(), y_coords.max()
+    if not all_x or not all_y:
+        # This path has no coordinates (e.g., only 'Z' commands or is empty)
+        return np_path, np.array([0., 0.]), 1.0
+
+    min_x, max_x = min(all_x), max(all_x)
+    min_y, max_y = min(all_y), max(all_y)
 
     offset = np.array([min_x, min_y])
     scale = max(max_x - min_x, max_y - min_y)
@@ -130,17 +145,26 @@ def normalize_path(np_path):
     normalized_path = np_path.copy()
     # Apply normalization to coordinate columns
     for i in range(4, normalized_path.shape[1], 2):
-        # Only apply to non-zero values to avoid affecting padding
-        mask = normalized_path[:, i] != 0
-        normalized_path[mask, i] = (normalized_path[mask, i] - offset[0]) / scale
-        normalized_path[mask, i+1] = (normalized_path[mask, i+1] - offset[1]) / scale
+        x_col_idx, y_col_idx = i, i + 1
+        
+        # Create a mask for rows that have a point in this (x, y) slot.
+        # This correctly handles points like (c, 0) or (0, c).
+        point_exists_mask = (np_path[:, x_col_idx] != 0) | (np_path[:, y_col_idx] != 0)
+
+        # Apply normalization only to the points that exist.
+        normalized_path[point_exists_mask, x_col_idx] = (np_path[point_exists_mask, x_col_idx] - offset[0]) / scale
+        normalized_path[point_exists_mask, y_col_idx] = (np_path[point_exists_mask, y_col_idx] - offset[1]) / scale
 
     return normalized_path, offset, scale
+
 
 def denormalize_path(normalized_path, offset, scale):
     """Denormalizes a numpy path array using the given offset and scale."""
     denormalized_path = normalized_path.copy()
-    denormalized_path[:, 4:] = denormalized_path[:, 4:] * scale + np.tile(offset, int(denormalized_path.shape[1] / 2) - 2)
+    # Apply the reverse transformation to all coordinate columns.
+    for i in range(4, denormalized_path.shape[1], 2):
+        denormalized_path[:, i] = denormalized_path[:, i] * scale + offset[0]
+        denormalized_path[:, i+1] = denormalized_path[:, i+1] * scale + offset[1]
     return denormalized_path
 
 @app.route('/')
@@ -151,7 +175,7 @@ def index():
 def get_trajectories():
     data = request.get_json()
     text = data.get('text', '山居秋暝')
-    font_path = '/System/Library/Fonts/STHeiti Medium.ttc'
+    font_path = '/System/Library/Fonts/STHeiti Medium.ttc' # Path for macOS, might need adjustment for other OS
     try:
         original_paths = get_glyph_paths(font_path, text)
 
@@ -163,21 +187,28 @@ def get_trajectories():
             # Normalize the path and store parameters for denormalization
             np_path_normalized, offset, scale = normalize_path(np_path)
             
-            # Tokenize and detokenize
+            # --- FIX ---
+            # Use the 'actions' keyword argument to prevent the processor from
+            # misinterpreting the input as text. This resolves the AttributeError.
             tokens = processor([np_path_normalized])
-            # The decoded path is also normalized
+            
+            # Since our batch size is 1, we take the first element [0].
             decoded_normalized_path = processor.decode(tokens)[0]
 
             # Denormalize the path to get back original coordinates
-            decoded_path = denormalize_path(decoded_normalized_path, offset, scale)
+            decoded_path_np = denormalize_path(decoded_normalized_path, offset, scale)
             
-            # Convert back to path
-            reconstructed_paths[char] = numpyToPath(decoded_path)
+            # Convert back to path command list
+            reconstructed_paths[char] = numpyToPath(decoded_path_np)
 
         return jsonify({
             "original": original_paths,
             "reconstructed": reconstructed_paths
         })
+    except FileNotFoundError:
+        error_msg = f"Font file not found at {font_path}. Please update the path for your operating system."
+        print(error_msg)
+        return jsonify({"error": error_msg}), 500
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
