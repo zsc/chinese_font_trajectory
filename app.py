@@ -113,7 +113,7 @@ def get_trajectories():
             np_path = pathToNumpy(path)
             
             # Tokenize and detokenize
-            tokens = processor(np_path)
+            tokens = processor([np_path])
             decoded_path = processor.decode(tokens)[0]
             print(type(decoded_path))
             print(decoded_path.shape)
