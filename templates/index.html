@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chinese Font Trajectory</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <h1>Chinese Font Trajectory Visualization</h1>
+    <div class="container">
+        <div class="input-section">
+            <textarea id="text-input" rows="4" cols="50">山居秋暝</textarea>
+            <button id="visualize-btn">Visualize</button>
+        </div>
+        <div class="visualization-section">
+            <div class="panel">
+                <h2>Original Trajectories</h2>
+                <div id="original-trajectories"></div>
+            </div>
+            <div class="panel">
+                <h2>Reconstructed Trajectories (FAST+ Tokenizer)</h2>
+                <div id="reconstructed-trajectories"></div>
+            </div>
+        </div>
+    </div>
+    <script src="/static/script.js"></script>
+</body>
+</html>

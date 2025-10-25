@@ -1,0 +1,1 @@
+汉字字体的最底层，是一堆bezier curve 轨迹。写一个 python3 后台 + 前台 single-file html，实现 demo 可视化从汉字字体文件提取的轨迹（默认使用一句诗，也支持用户输入），并 side-by-side 显示 FAST+ tokenizer （见 https://huggingface.co/physical-intelligence/fast） tokenize 这些轨迹再 de-tokenize 成重建的轨迹的结果。
