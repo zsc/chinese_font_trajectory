@@ -2,8 +2,14 @@ from flask import Flask, render_template, request, jsonify
 import json
 from fontTools.ttLib import TTFont
 from fontTools.pens.basePen import BasePen
+import traceback
+from transformers import AutoProcessor
+import numpy as np
 
 app = Flask(__name__)
+
+# Load FAST+ processor
+processor = AutoProcessor.from_pretrained("physical-intelligence/fast", trust_remote_code=True)
 
 class BezierPathPen(BasePen):
     def __init__(self, glyphSet):
@@ -22,8 +28,6 @@ class BezierPathPen(BasePen):
     def _closePath(self):
         self.path.append(("Z",))
 
-import traceback
-
 def get_glyph_paths(font_path, text):
     font = TTFont(font_path, fontNumber=0, ignoreDecompileErrors=True)
     glyphSet = font.getGlyphSet()
@@ -41,6 +45,49 @@ def get_glyph_paths(font_path, text):
             paths[char] = pen.path
     return paths
 
+def pathToNumpy(path):
+    # Find the maximum number of points in a segment
+    max_pts = 0
+    for segment in path:
+        max_pts = max(max_pts, len(segment) - 1)
+
+    # Create a numpy array
+    np_path = []
+    for segment in path:
+        segment_type = segment[0]
+        pts = segment[1:]
+        row = []
+        if segment_type == 'M':
+            row.extend([1,0,0,0])
+        elif segment_type == 'L':
+            row.extend([0,1,0,0])
+        elif segment_type == 'C':
+            row.extend([0,0,1,0])
+        elif segment_type == 'Z':
+            row.extend([0,0,0,1])
+        
+        for p in pts:
+            row.extend(p)
+        
+        # Pad with zeros
+        row.extend([0] * (2 * (max_pts - len(pts))))
+        np_path.append(row)
+
+    return np.array(np_path)
+
+def numpyToPath(np_path):
+    path = []
+    for row in np_path:
+        if row[0] == 1:
+            path.append(("M", (row[4], row[5])))
+        elif row[1] == 1:
+            path.append(("L", (row[4], row[5])))
+        elif row[2] == 1:
+            path.append(("C", (row[4], row[5]), (row[6], row[7]), (row[8], row[9])))
+        elif row[3] == 1:
+            path.append(("Z",))
+    return path
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -49,11 +96,26 @@ def index():
 def get_trajectories():
     data = request.get_json()
     text = data.get('text', '山居秋暝')
-    # You need to provide a path to a Chinese font file
-    font_path = '/System/Library/Fonts/STHeiti Medium.ttc' # This is a common path on macOS
+    font_path = '/System/Library/Fonts/STHeiti Medium.ttc'
     try:
-        paths = get_glyph_paths(font_path, text)
-        return jsonify(paths)
+        original_paths = get_glyph_paths(font_path, text)
+
+        reconstructed_paths = {}
+        for char, path in original_paths.items():
+            # Convert path to numpy array
+            np_path = pathToNumpy(path)
+            
+            # Tokenize and detokenize
+            tokens = processor(np_path)
+            decoded_path = processor.decode(tokens)
+            
+            # Convert back to path
+            reconstructed_paths[char] = numpyToPath(decoded_path)
+
+        return jsonify({
+            "original": original_paths,
+            "reconstructed": reconstructed_paths
+        })
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500

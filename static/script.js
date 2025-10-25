@@ -2,6 +2,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const textInput = document.getElementById('text-input');
     const visualizeBtn = document.getElementById('visualize-btn');
     const originalTrajectoriesDiv = document.getElementById('original-trajectories');
+    const reconstructedTrajectoriesDiv = document.getElementById('reconstructed-trajectories');
     const strokeWidthInput = document.getElementById('stroke-width');
     const scalingInput = document.getElementById('scaling');
     const colorGradientInput = document.getElementById('color-gradient');
@@ -24,13 +25,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             trajectoriesData = data;
-            displayTrajectories(trajectoriesData, originalTrajectoriesDiv);
+            displayTrajectories(trajectoriesData.original, originalTrajectoriesDiv);
+            displayTrajectories(trajectoriesData.reconstructed, reconstructedTrajectoriesDiv);
         });
     });
 
-    strokeWidthInput.addEventListener('input', () => displayTrajectories(trajectoriesData, originalTrajectoriesDiv));
-    scalingInput.addEventListener('input', () => displayTrajectories(trajectoriesData, originalTrajectoriesDiv));
-    colorGradientInput.addEventListener('change', () => displayTrajectories(trajectoriesData, originalTrajectoriesDiv));
+    strokeWidthInput.addEventListener('input', () => {
+        displayTrajectories(trajectoriesData.original, originalTrajectoriesDiv);
+        displayTrajectories(trajectoriesData.reconstructed, reconstructedTrajectoriesDiv);
+    });
+    scalingInput.addEventListener('input', () => {
+        displayTrajectories(trajectoriesData.original, originalTrajectoriesDiv);
+        displayTrajectories(trajectoriesData.reconstructed, reconstructedTrajectoriesDiv);
+    });
+    colorGradientInput.addEventListener('change', () => {
+        displayTrajectories(trajectoriesData.original, originalTrajectoriesDiv);
+        displayTrajectories(trajectoriesData.reconstructed, reconstructedTrajectoriesDiv);
+    });
 
     function displayTrajectories(trajectories, container) {
         if (!trajectories) return;
