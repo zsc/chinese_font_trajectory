@@ -73,18 +73,25 @@ def pathToNumpy(path):
         row.extend([0] * (2 * (max_pts - len(pts))))
         np_path.append(row)
 
-    return np.array(np_path)
+    return np.array(np_path, dtype=np.float32)
 
 def numpyToPath(np_path):
+    """
+    Converts a 2D numpy array back to a list of path commands.
+    """
     path = []
+    # np_path is expected to be a 2D array of shape (sequence_length, features)
     for row in np_path:
-        if row[0] == 1:
+        # Find the most likely command by finding the index of the max value in the first 4 elements
+        command_index = np.argmax(row[:4])
+        
+        if command_index == 0: # 'M'
             path.append(("M", (row[4], row[5])))
-        elif row[1] == 1:
+        elif command_index == 1: # 'L'
             path.append(("L", (row[4], row[5])))
-        elif row[2] == 1:
+        elif command_index == 2: # 'C'
             path.append(("C", (row[4], row[5]), (row[6], row[7]), (row[8], row[9])))
-        elif row[3] == 1:
+        elif command_index == 3: # 'Z'
             path.append(("Z",))
     return path
 
@@ -107,7 +114,10 @@ def get_trajectories():
             
             # Tokenize and detokenize
             tokens = processor(np_path)
-            decoded_path = processor.decode(tokens)
+            decoded_path = processor.decode(tokens)[0]
+            print(type(decoded_path))
+            print(decoded_path.shape)
+            print(decoded_path)
             
             # Convert back to path
             reconstructed_paths[char] = numpyToPath(decoded_path)
