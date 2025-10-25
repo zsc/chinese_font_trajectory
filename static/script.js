@@ -2,6 +2,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const textInput = document.getElementById('text-input');
     const visualizeBtn = document.getElementById('visualize-btn');
     const originalTrajectoriesDiv = document.getElementById('original-trajectories');
+    const strokeWidthInput = document.getElementById('stroke-width');
+    const scalingInput = document.getElementById('scaling');
+    const colorGradientInput = document.getElementById('color-gradient');
+
+    let trajectoriesData = null;
 
     visualizeBtn.addEventListener('click', () => {
         const text = textInput.value;
@@ -18,11 +23,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert('Error: ' + data.error);
                 return;
             }
-            displayTrajectories(data, originalTrajectoriesDiv);
+            trajectoriesData = data;
+            displayTrajectories(trajectoriesData, originalTrajectoriesDiv);
         });
     });
 
+    strokeWidthInput.addEventListener('input', () => displayTrajectories(trajectoriesData, originalTrajectoriesDiv));
+    scalingInput.addEventListener('input', () => displayTrajectories(trajectoriesData, originalTrajectoriesDiv));
+    colorGradientInput.addEventListener('change', () => displayTrajectories(trajectoriesData, originalTrajectoriesDiv));
+
     function displayTrajectories(trajectories, container) {
+        if (!trajectories) return;
         container.innerHTML = '';
         for (const char in trajectories) {
             const path = trajectories[char];
@@ -39,11 +50,23 @@ document.addEventListener('DOMContentLoaded', () => {
     function drawPath(ctx, path) {
         ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
         ctx.save();
+        const scale = parseFloat(scalingInput.value);
         ctx.translate(20, 180);
-        ctx.scale(0.1, -0.1);
+        ctx.scale(scale, -scale);
+        ctx.lineWidth = parseFloat(strokeWidthInput.value) / scale;
+
+        const useColorGradient = colorGradientInput.checked;
+        let segmentIndex = 0;
+
         ctx.beginPath();
         for (const segment of path) {
             const [type, ...pts] = segment;
+
+            if (useColorGradient) {
+                const hue = (segmentIndex / path.length) * 360;
+                ctx.strokeStyle = `hsl(${hue}, 100%, 50%)`;
+            }
+
             if (type === 'M') {
                 ctx.moveTo(pts[0][0], pts[0][1]);
             } else if (type === 'L') {
@@ -53,8 +76,20 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (type === 'Z') {
                 ctx.closePath();
             }
+
+            if (useColorGradient) {
+                ctx.stroke();
+                ctx.beginPath();
+                if (type !== 'Z') {
+                    const lastPoint = pts[pts.length - 1];
+                    ctx.moveTo(lastPoint[0], lastPoint[1]);
+                }
+            }
+            segmentIndex++;
         }
-        ctx.stroke();
+        if (!useColorGradient) {
+            ctx.stroke();
+        }
         ctx.restore();
     }
 });

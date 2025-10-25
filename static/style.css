@@ -17,6 +17,11 @@ h1 {
     margin-bottom: 20px;
 }
 
+.controls-section {
+    margin-bottom: 20px;
+    text-align: center;
+}
+
 .visualization-section {
     display: flex;
     justify-content: space-around;

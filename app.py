@@ -25,7 +25,7 @@ class BezierPathPen(BasePen):
 import traceback
 
 def get_glyph_paths(font_path, text):
-    font = TTFont(font_path, ignoreDecompileErrors=True)
+    font = TTFont(font_path, fontNumber=0, ignoreDecompileErrors=True)
     glyphSet = font.getGlyphSet()
     cmap = font.getBestCmap()
     paths = {}
